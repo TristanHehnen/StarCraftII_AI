@@ -7,7 +7,8 @@ import sc2
 # print(sc2.__file__)
 from sc2 import run_game, maps, Race, Difficulty
 from sc2.player import Bot, Computer
-from sc2.constants import NEXUS, PROBE, PYLON, ASSIMILATOR
+from sc2.constants import NEXUS, PROBE, PYLON, ASSIMILATOR, GATEWAY, \
+    CYBERNETICSCORE, STALKER
 
 
 class SentdeBot(sc2.BotAI):
@@ -19,6 +20,8 @@ class SentdeBot(sc2.BotAI):
         await self.build_pylons()
         await self.build_assimilators()
         await self.expand()
+        await self.offensive_force_buildings()
+        await self.build_offensive_force()
 
     # Build new workers at a nexus that is ready.
     async def build_workers(self):
@@ -48,11 +51,35 @@ class SentdeBot(sc2.BotAI):
                 if not self.units(ASSIMILATOR).closer_than(1.0, vaspene).exists:
                     await self.do(worker.build(ASSIMILATOR, vaspene))
 
-    #
+    # Expand to a new location with resources.
     async def expand(self):
         if self.units(NEXUS).amount < 3 and self.can_afford(NEXUS):
             await self.expand_now()
 
+    #
+    async def offensive_force_buildings(self):
+        # Find random construction site near random pylon.
+        if self.units(PYLON).ready:#.exits:
+            pylon = self.units(PYLON).ready.random
+            # Figure out if a gateway exists.
+            if self.units(GATEWAY).ready:#.exists:
+                # Figure out if a cybernetics core exists. If not then try to
+                #  build one.
+                if not self.units(CYBERNETICSCORE):
+                    if self.can_afford(CYBERNETICSCORE) and not \
+                            self.already_pending(CYBERNETICSCORE):
+                        await self.build(CYBERNETICSCORE, near=pylon)
+            # If no gateway is found, try to build one.
+            else:
+                if self.can_afford(GATEWAY) and not self.already_pending(
+                        GATEWAY):
+                    await self.build(GATEWAY, near=pylon)
+
+    # Build stalkers as offencive force.
+    async def build_offensive_force(self):
+        for gw in self.units(GATEWAY).ready.noqueue:
+            if self.can_afford(STALKER) and self.supply_left > 0:
+                await self.do(gw.train(STALKER))
 
 # Starts the game. Choose the map and the participants, race and difficulty.
 run_game(maps.get("AbyssalReefLE"),
