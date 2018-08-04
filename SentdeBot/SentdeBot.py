@@ -63,16 +63,15 @@ class SentdeBot(sc2.BotAI):
         # Find random construction site near random pylon.
         if self.units(PYLON).ready:
             pylon = self.units(PYLON).ready.random
-            # Figure out if a gateway exists.
-            if self.units(GATEWAY).ready:
-                # Figure out if a cybernetics core exists. If not then try to
-                #  build one.
-                if not self.units(CYBERNETICSCORE):
-                    if self.can_afford(CYBERNETICSCORE) and not \
-                            self.already_pending(CYBERNETICSCORE):
-                        await self.build(CYBERNETICSCORE, near=pylon)
+
+            # Figure out if a gateway exists, as well as a cybernetics core.
+            if self.units(GATEWAY).ready and not self.units(CYBERNETICSCORE):
+                # Build a cybernetics core.
+                if self.can_afford(CYBERNETICSCORE) and not \
+                        self.already_pending(CYBERNETICSCORE):
+                    await self.build(CYBERNETICSCORE, near=pylon)
             # If no gateway is found, try to build one.
-            else:
+            elif len(self.units(GATEWAY)) < 3:
                 if self.can_afford(GATEWAY) and not self.already_pending(
                         GATEWAY):
                     await self.build(GATEWAY, near=pylon)
@@ -83,10 +82,25 @@ class SentdeBot(sc2.BotAI):
             if self.can_afford(STALKER) and self.supply_left > 0:
                 await self.do(gw.train(STALKER))
 
+    #
+    def find_target(self, state):
+        if len(self.known_enemy_units) > 0:
+            return random.choice(self.known_enemy_units)
+        elif len(self.known_enemy_structures) > 0:
+            return random.choice(self.known_enemy_structures)
+        else:
+            return self.enemy_start_locations[0]
+
     # Attack known enemy units.
     async def attack(self):
-        if self.units(STALKER).amount > 5:
-            if self.known_enemy_units:
+        # Offensive part.
+        if self.units(STALKER).amount > 15:
+            for s in self.units(STALKER).idle:
+                await self.do(s.attack(self.find_target(self.state)))
+
+        # More for the defensive part.
+        if self.units(STALKER).amount > 3:
+            if len(self.known_enemy_units) > 0:
                 for s in self.units(STALKER).idle:
                     await self.do(s.attack(random.choice(
                         self.known_enemy_units)))
@@ -95,5 +109,5 @@ class SentdeBot(sc2.BotAI):
 # Starts the game. Choose the map and the participants, race and difficulty.
 run_game(maps.get("AbyssalReefLE"),
          [Bot(Race.Protoss, SentdeBot()),
-          Computer(Race.Terran, Difficulty.Easy)],
+          Computer(Race.Terran, Difficulty.Medium)],
          realtime=True)
