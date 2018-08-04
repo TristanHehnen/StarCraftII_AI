@@ -6,6 +6,10 @@ from sc2.player import Bot, Computer
 from sc2.constants import HATCHERY, EXTRACTOR, SPAWNINGPOOL, LARVA, OVERLORD, \
     DRONE, ZERGLING
 
+from sc2.game_state import Common
+
+max_drones = 50
+
 
 # The Purple Menace -- a Zerg hive mind,
 # about to cover the world in creep and gore.
@@ -21,6 +25,20 @@ class ThePurpleMenace(sc2.BotAI):
         await self.morph_zergling()
         await self.attack()
 
+    # Determine if more drones are needed.
+    async def drone_morph_flag(self):
+        # Use only two drones per geyser, because they get removed from the
+        # game while "inside" the extractor. Thus, the count will be off
+        # occasionally. However, eventually extra drones get spawned to fill
+        # up the difference.
+        hatcheries = self.units(HATCHERY).amount * 16
+        extractors = self.units(EXTRACTOR).amount * 2
+        drone_calc = hatcheries + extractors
+        if drone_calc < max_drones:
+            return True
+        else:
+            return False
+
     # Spawn new overlord when necessary.
     async def spawn_overlord(self):
         if self.supply_left < 5 and not self.already_pending(OVERLORD):
@@ -34,23 +52,19 @@ class ThePurpleMenace(sc2.BotAI):
 
     # Morph more drones.
     async def morph_drone(self):
-        hatcheries = self.units(HATCHERY).amount * 16
-        # Use only two drones per geyser, because they get removed from the
-        # game while "inside" the extractor. Thus, the count will be off
-        # occasionally. However, eventually extra drones get spawned to fill
-        # up the difference.
-        extractors = self.units(EXTRACTOR).amount * 2
         # Account for drones in the process of being morphed.
         drones = self.units(DRONE).ready.amount + self.units(
             DRONE).not_ready.amount
-        # print("* hatcheries: {}\n* extractors{}\n* drones{}".format(
+        # print("* hatcheries: {}\n* extractors: {}\n* drones: {}".format(
         #     hatcheries, extractors, drones))
-        drones_desired = hatcheries + extractors
-        if drones < drones_desired and \
-                self.units(LARVA).ready and self.can_afford(DRONE) \
+        if await self.drone_morph_flag() is True \
+                and self.units(LARVA).ready \
+                and self.can_afford(DRONE) \
                 and not self.already_pending(DRONE):
-            larva = self.units(LARVA).first
-            await self.do(larva.train(DRONE))
+            for i in range(2):
+                if self.can_afford(DRONE):
+                    larva = self.units(LARVA).random
+                    await self.do(larva.train(DRONE))
 
     # Locate hatcheries and create vespene extractors in their vicinity.
     async def build_extractor(self):
@@ -75,18 +89,21 @@ class ThePurpleMenace(sc2.BotAI):
                 if hatcheries.exists:
                     await self.build(SPAWNINGPOOL, near=hatcheries.first)
 
-    # Expand to a new location with resources.
+    # Expand to a new location with resources. One hatchery at a time...
     async def expand(self):
-        if self.units(HATCHERY).amount < 3 and self.can_afford(HATCHERY):
+        if self.units(HATCHERY).amount < 5 \
+                and self.can_afford(HATCHERY) \
+                and not self.already_pending(HATCHERY):
             await self.expand_now()
 
     # Morph zerglings up to a specified amount. More hatcheries lead to
     # faster morph rates.
     async def morph_zergling(self):
-        zerglings_desired = 50
+
+        zerglings_desired = 70
         # Account for zerglings in the process of being morphed.
         zerglings = self.units(ZERGLING).ready.amount + self.units(
-            DRONE).not_ready.amount
+            ZERGLING).not_ready.amount
 
         # if zerglings < zerglings_desired and \
         #         self.units(LARVA).ready and self.can_afford(ZERGLING) \
@@ -94,15 +111,16 @@ class ThePurpleMenace(sc2.BotAI):
         #     larva = self.units(LARVA).first
         #     await self.do(larva.train(ZERGLING))
 
-        if zerglings < zerglings_desired:
-            zl_morph_desired = self.units(HATCHERY).amount
+        if zerglings < zerglings_desired \
+                and self.units(SPAWNINGPOOL).ready:
+            zl_morph_desired = 1 + (self.units(HATCHERY).ready.amount - 1)
             zl_morph = self.units(ZERGLING).not_ready.amount
-            for hatchery in self.units(HATCHERY):
-                if self.units(LARVA).ready \
-                        and self.can_afford(ZERGLING) \
-                        and zl_morph < zl_morph_desired:
-                    larva = self.units(LARVA).random
-                    await self.do(larva.train(ZERGLING))
+            # for hatchery in self.units(HATCHERY):
+            if self.units(LARVA).ready \
+                    and self.minerals > 55 \
+                    and zl_morph < zl_morph_desired:
+                larva = self.units(LARVA).random
+                await self.do(larva.train(ZERGLING))
 
     # Attack known enemy units.
     async def attack(self):
