@@ -66,7 +66,7 @@ class ThePurpleMenace(sc2.BotAI):
                         and not self.already_pending(EXTRACTOR):
                     await self.do(worker.build(EXTRACTOR, geyser))
 
-    #
+    # Build spawning pool at random location to get access to zerglings.
     async def build_spawningpool(self):
         if self.units(SPAWNINGPOOL).amount < 1 and \
             self.can_afford(SPAWNINGPOOL) \
@@ -80,18 +80,29 @@ class ThePurpleMenace(sc2.BotAI):
         if self.units(HATCHERY).amount < 3 and self.can_afford(HATCHERY):
             await self.expand_now()
 
-    #
+    # Morph zerglings up to a specified amount. More hatcheries lead to
+    # faster morph rates.
     async def morph_zergling(self):
         zerglings_desired = 50
         # Account for zerglings in the process of being morphed.
         zerglings = self.units(ZERGLING).ready.amount + self.units(
             DRONE).not_ready.amount
 
-        if zerglings < zerglings_desired and \
-                self.units(LARVA).ready and self.can_afford(ZERGLING) \
-                and not self.already_pending(ZERGLING):
-            larva = self.units(LARVA).first
-            await self.do(larva.train(ZERGLING))
+        # if zerglings < zerglings_desired and \
+        #         self.units(LARVA).ready and self.can_afford(ZERGLING) \
+        #         and not self.already_pending(ZERGLING):
+        #     larva = self.units(LARVA).first
+        #     await self.do(larva.train(ZERGLING))
+
+        if zerglings < zerglings_desired:
+            zl_morph_desired = self.units(HATCHERY).amount
+            zl_morph = self.units(ZERGLING).not_ready.amount
+            for hatchery in self.units(HATCHERY):
+                if self.units(LARVA).ready \
+                        and self.can_afford(ZERGLING) \
+                        and zl_morph < zl_morph_desired:
+                    larva = self.units(LARVA).random
+                    await self.do(larva.train(ZERGLING))
 
     # Attack known enemy units.
     async def attack(self):
@@ -100,7 +111,6 @@ class ThePurpleMenace(sc2.BotAI):
                 for s in self.units(ZERGLING).idle:
                     await self.do(s.attack(random.choice(
                         self.known_enemy_units)))
-
 
 
 # Starts the game. Choose the map and the participants, race and difficulty.
