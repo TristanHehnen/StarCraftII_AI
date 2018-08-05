@@ -9,12 +9,22 @@ import random
 from sc2 import run_game, maps, Race, Difficulty
 from sc2.player import Bot, Computer
 from sc2.constants import NEXUS, PROBE, PYLON, ASSIMILATOR, GATEWAY, \
-    CYBERNETICSCORE, STALKER
+    CYBERNETICSCORE, STALKER, STARGATE, VOIDRAY
+
 
 
 class SentdeBot(sc2.BotAI):
+
+    def __init__(self):
+        # Make the iterations accessible throughout the class.
+        # From sentdex: about 165 iterations per minute.
+        self.iterations_per_minute = 10000
+        self.max_workers = 65
+
     # Defines asynchronous methods for the classes.
     async def on_step(self, iteration):
+        # Keep track of the iterations.
+        self.iteration = iteration
         # Automatically limit the workers to as much a two per resource patch.
         await self.distribute_workers()
         await self.build_workers()
@@ -27,9 +37,13 @@ class SentdeBot(sc2.BotAI):
 
     # Build new workers at a nexus that is ready.
     async def build_workers(self):
-        for nexus in self.units(NEXUS).ready.noqueue:
-            if self.can_afford(PROBE):
-                await self.do(nexus.train(PROBE))
+        # Check how many probes exist and scale the amount by the Nexuses.
+        # Max amount is capped.
+        if len(self.units(NEXUS)) * 16 > len(self.units(PROBE)):
+            if len(self.units(PROBE)) < self.max_workers:
+                for nexus in self.units(NEXUS).ready.noqueue:
+                    if self.can_afford(PROBE):
+                        await self.do(nexus.train(PROBE))
 
     # Build new pylons, somewhere close to the a nexus.
     async def build_pylons(self):
@@ -70,17 +84,37 @@ class SentdeBot(sc2.BotAI):
                 if self.can_afford(CYBERNETICSCORE) and not \
                         self.already_pending(CYBERNETICSCORE):
                     await self.build(CYBERNETICSCORE, near=pylon)
-            # If no gateway is found, try to build one.
-            elif len(self.units(GATEWAY)) < 3:
+
+            # If no Gateway is found, try to build one about every two minutes.
+            elif len(self.units(GATEWAY)) < \
+                    ((self.iteration / self.iterations_per_minute) / 2):
                 if self.can_afford(GATEWAY) and not self.already_pending(
                         GATEWAY):
+                    print(self.iteration, self.iterations_per_minute,
+                          ((self.iteration / self.iterations_per_minute) / 2))
                     await self.build(GATEWAY, near=pylon)
+
+            # If no Stargate is found, try to build one about every two minutes.
+            if self.units(CYBERNETICSCORE).ready.exists:
+                if len(self.units(STARGATE)) < \
+                        ((self.iteration / self.iterations_per_minute) / 2):
+                    if self.can_afford(STARGATE) and not self.already_pending(
+                            STARGATE):
+                        print(self.iteration, self.iterations_per_minute,
+                              ((self.iteration / self.iterations_per_minute)
+                               / 2))
+                        await self.build(STARGATE, near=pylon)
 
     # Build stalkers as offencive force.
     async def build_offensive_force(self):
         for gw in self.units(GATEWAY).ready.noqueue:
-            if self.can_afford(STALKER) and self.supply_left > 0:
-                await self.do(gw.train(STALKER))
+            if not self.units(STALKER).amount > self.units(VOIDRAY).amount:
+                if self.can_afford(STALKER) and self.supply_left > 0:
+                    await self.do(gw.train(STALKER))
+
+        for sg in self.units(STARGATE).ready.noqueue:
+            if self.can_afford(VOIDRAY) and self.supply_left > 0:
+                await self.do(sg.train(VOIDRAY))
 
     #
     def find_target(self, state):
@@ -94,16 +128,21 @@ class SentdeBot(sc2.BotAI):
     # Attack known enemy units.
     async def attack(self):
         # Offensive part.
-        if self.units(STALKER).amount > 15:
-            for s in self.units(STALKER).idle:
-                await self.do(s.attack(self.find_target(self.state)))
+        # {unit: [n to fight, n to defend]}
+        aggressive_units = {STALKER: [15, 5],
+                            VOIDRAY: [8, 3]}
 
-        # More for the defensive part.
-        if self.units(STALKER).amount > 3:
-            if len(self.known_enemy_units) > 0:
-                for s in self.units(STALKER).idle:
-                    await self.do(s.attack(random.choice(
-                        self.known_enemy_units)))
+        for unit in aggressive_units:
+            if self.units(STALKER).amount > aggressive_units[unit][0] \
+                    and self.units(unit).amount > aggressive_units[unit][1]:
+                for s in self.units(unit).idle:
+                    await self.do(s.attack(self.find_target(self.state)))
+
+            elif self.units(unit).amount > aggressive_units[unit][1]:
+                if len(self.known_enemy_units) > 0:
+                    for s in self.units(unit).idle:
+                        await self.do(s.attack(random.choice(
+                            self.known_enemy_units)))
 
 
 # Starts the game. Choose the map and the participants, race and difficulty.
